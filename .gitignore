@@ -1,0 +1,14 @@
+# Environment variables (contains secrets)
+.env
+.env.local
+.env.*.local
+
+# Claude Code local settings
+.claude/settings.local.json
+
+# OS files
+.DS_Store
+Thumbs.db
+
+# Tool results and temporary files
+.claude/projects/
