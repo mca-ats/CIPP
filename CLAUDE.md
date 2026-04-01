@@ -13,21 +13,23 @@ The goal of this project is to connect to the CIPP API and be able to manage ten
 - Patterns to follow
 
 ## Notes
-Connection example:
-$CIPPAPIUrl = "$CIPP_API_URL"
-$ApplicationId = "$CIPP_CLIENT_ID"
-$ApplicationSecret = "CIPP_API_Secret"
-$TenantId = "$CIPP_TENANT_ID"
+### PowerShell
+Scripts read `./.env` by default.
 
-$AuthBody = @{
-    client_id     = $ApplicationId
-    client_secret = $ApplicationSecret
-    scope         = "api://$($ApplicationId)/.default"
-    grant_type    = 'client_credentials'
-}
-$token = Invoke-RestMethod -Uri "https://login.microsoftonline.com/$TenantId/oauth2/v2.0/token" -Method POST -Body $AuthBody
+List accessible tenants:
+```pwsh
+pwsh scripts/list_tenants.ps1
+```
 
-$AuthHeader = @{ Authorization = "Bearer $($token.access_token)" }
-Invoke-RestMethod -Uri "$CIPPAPIUrl/api/ListLogs" -Method GET -Headers $AuthHeader -ContentType "application/json"
+Reset a user password (prints secret link if returned):
+```pwsh
+pwsh scripts/reset_password.ps1 -UserPrincipalName michael@novumdives.com -WhatIf
+pwsh scripts/reset_password.ps1 -UserPrincipalName michael@novumdives.com
+```
 
-
+Reusable API helper:
+```pwsh
+. scripts/cipp.ps1
+$token = Get-CippAccessToken
+Invoke-CippApi -Path '/api/ListLogs' -AccessToken $token
+```
