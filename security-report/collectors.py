@@ -90,6 +90,11 @@ def collect_secure_score(client: CippClient, tenant_id: str, tenant_name: str) -
     current_score = None
     max_score = None
 
+    # CIPP's ListGraphRequest wraps the Graph payload as {"Metadata":..., "Results":[...]}.
+    # Older code only handled a bare list, silently dropping the score. Normalize both.
+    if isinstance(data, dict):
+        data = data.get("Results") or data.get("value") or []
+
     if data and isinstance(data, list) and len(data) > 0:
         latest = data[0] if isinstance(data[0], dict) else {}
         current_score = latest.get("currentScore")
@@ -282,7 +287,7 @@ def collect_conditional_access(client: CippClient, tenant_id: str, tenant_name: 
         if no_mfa:
             pct = round(len(no_mfa) / len(mfa_users) * 100, 1)
             sev = Severity.CRITICAL if pct > 30 else Severity.HIGH if pct > 10 else Severity.MEDIUM
-            sample = [u.get("UPN", "Unknown") for u in no_mfa[:5]]
+            users = sorted(u.get("UPN", "Unknown") for u in no_mfa)
             findings.append(Finding(
                 tenant=tenant_name, tenant_id=tenant_id,
                 category="MFA",
@@ -290,7 +295,8 @@ def collect_conditional_access(client: CippClient, tenant_id: str, tenant_name: 
                 severity=sev,
                 description=f"{len(no_mfa)} of {len(mfa_users)} enabled users have not registered for MFA.",
                 recommendation="Require MFA registration for all users via CA policy or security defaults.",
-                details={"count": len(no_mfa), "total": len(mfa_users), "sample": sample},
+                details={"count": len(no_mfa), "total": len(mfa_users),
+                         "sample": users[:5], "users": users},
             ))
 
     return findings
@@ -408,7 +414,7 @@ def collect_mailbox_security(client: CippClient, tenant_id: str, tenant_name: st
             severity=Severity.HIGH if count > 3 else Severity.MEDIUM,
             description=f"{count} mailboxes have external forwarding configured. This is a common attack vector.",
             recommendation="Audit all mailbox forwarding rules. Consider disabling external forwarding via transport rule.",
-            details={"forwarding": forwarding_details[:20]},
+            details={"forwarding": forwarding_details[:100]},
         ))
 
     return findings

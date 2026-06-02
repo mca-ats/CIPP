@@ -1,0 +1,11 @@
+# Core runtime
+httpx>=0.27          # CIPP API client
+pydantic>=2          # structured narrative model
+weasyprint>=60       # HTML/CSS -> PDF (needs system pango/cairo; macOS: `brew install pango`)
+
+# Optional: enables the AI-written narrative. Without it (or without ANTHROPIC_API_KEY)
+# the deterministic fallback narrative is used and the pipeline still produces a full report.
+anthropic>=0.40
+
+# Dev/test
+pytest>=8

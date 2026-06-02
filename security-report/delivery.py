@@ -75,7 +75,9 @@ def deliver_via_email(
     Reads SMTP config from environment variables if not provided:
         SMTP_HOST, SMTP_PORT, SMTP_USER, SMTP_PASSWORD, SMTP_FROM, REPORT_EMAIL_TO
     """
-    to_addr = to_address or os.environ.get("REPORT_EMAIL_TO", "michael@abatetechnology.com")
+    to_addr = to_address or os.environ.get("REPORT_EMAIL_TO")
+    if not to_addr:
+        raise ValueError("No report recipient: pass to_address or set REPORT_EMAIL_TO")
     from_addr = from_address or os.environ.get("SMTP_FROM", to_addr)
     host = smtp_host or os.environ.get("SMTP_HOST")
     port = smtp_port or int(os.environ.get("SMTP_PORT", "587"))

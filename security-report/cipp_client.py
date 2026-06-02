@@ -16,16 +16,37 @@ from typing import Any, Mapping
 import httpx
 
 DEFAULT_ENV_PATH = Path(__file__).resolve().parent.parent / ".env"
-DEFAULT_TIMEOUT = 60.0
+# CIPP proxies cold Graph endpoints (ListInactiveAccounts, ListMFAUsers, ListBasicAuth)
+# that can take well over a minute on first hit — give reads a long window and retry
+# transient timeouts so a cold endpoint doesn't silently drop a whole data domain.
+DEFAULT_TIMEOUT = httpx.Timeout(150.0, connect=15.0)
+MAX_RETRIES = 2          # total attempts = MAX_RETRIES + 1
+RETRY_BACKOFF = 3.0      # seconds, linear
 
 
 class CippError(RuntimeError):
     pass
 
 
-def parse_env_file(path: Path = DEFAULT_ENV_PATH) -> dict[str, str]:
-    if not path.exists():
-        raise CippError(f"Missing env file: {path}")
+def _find_env_file(explicit: Path | None = None) -> Path | None:
+    """Locate a .env: explicit path, else co-located (module dir), then one/two
+    levels up. Returns None if none found (caller falls back to os.environ —
+    e.g. a launchd/systemd-injected environment)."""
+    if explicit is not None:
+        p = Path(explicit)
+        return p if p.exists() else None
+    here = Path(__file__).resolve().parent
+    for cand in (here / ".env", here.parent / ".env", here.parent.parent / ".env"):
+        if cand.exists():
+            return cand
+    return None
+
+
+def parse_env_file(path: Path | None = None) -> dict[str, str]:
+    """Parse a .env into a dict. Missing/None path -> {} (rely on os.environ)."""
+    if path is None or not Path(path).exists():
+        return {}
+    path = Path(path)
     env: dict[str, str] = {}
     for raw in path.read_text().splitlines():
         line = raw.strip()
@@ -52,6 +73,8 @@ class CippClient:
     _token: str | None = field(default=None, repr=False)
     _token_expires: float = field(default=0.0, repr=False)
     _http: httpx.Client = field(default=None, repr=False)
+    _max_retries: int = field(default=MAX_RETRIES, repr=False)
+    _retry_backoff: float = field(default=RETRY_BACKOFF, repr=False)
 
     def __post_init__(self):
         self.api_url = self.api_url.rstrip("/")
@@ -59,8 +82,8 @@ class CippClient:
             self._http = httpx.Client(timeout=DEFAULT_TIMEOUT)
 
     @classmethod
-    def from_env(cls, env_path: Path = DEFAULT_ENV_PATH) -> CippClient:
-        env = parse_env_file(env_path)
+    def from_env(cls, env_path: Path | None = None) -> CippClient:
+        env = parse_env_file(_find_env_file(env_path))
 
         def get(key: str) -> str:
             val = env.get(key) or os.environ.get(key)
@@ -105,16 +128,29 @@ class CippClient:
         return self._token
 
     def get(self, path: str, params: dict[str, Any] | None = None) -> Any:
-        token = self._ensure_token()
         url = f"{self.api_url}/{path.lstrip('/')}"
-        resp = self._http.get(
-            url,
-            params=params,
-            headers={"Authorization": f"Bearer {token}", "Accept": "application/json"},
-        )
-        if resp.status_code >= 400:
-            raise CippError(f"CIPP API error {resp.status_code} on GET {path}: {resp.text[:500]}")
-        return resp.json()
+        last_exc: Exception | None = None
+        for attempt in range(self._max_retries + 1):
+            token = self._ensure_token()
+            try:
+                resp = self._http.get(
+                    url,
+                    params=params,
+                    headers={"Authorization": f"Bearer {token}", "Accept": "application/json"},
+                )
+            except (httpx.TimeoutException, httpx.TransportError) as e:
+                last_exc = e
+                if attempt < self._max_retries:
+                    if self._retry_backoff:
+                        time.sleep(self._retry_backoff * (attempt + 1))
+                    continue
+                raise CippError(
+                    f"CIPP API timeout on GET {path} after {attempt + 1} attempts: {e}"
+                ) from e
+            if resp.status_code >= 400:
+                raise CippError(f"CIPP API error {resp.status_code} on GET {path}: {resp.text[:500]}")
+            return resp.json()
+        raise CippError(f"CIPP API failed on GET {path}: {last_exc}")  # unreachable
 
     def post(self, path: str, body: dict[str, Any] | None = None) -> Any:
         token = self._ensure_token()

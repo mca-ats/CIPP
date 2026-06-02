@@ -12,3 +12,20 @@ Thumbs.db
 
 # Tool results and temporary files
 .claude/projects/
+
+# Python
+__pycache__/
+*.pyc
+.venv/
+venv/
+
+# Generated client reports — CONFIDENTIAL client PII, never commit
+reports/
+*.xlsx
+
+# Scratch / dev iteration scripts (contain tenant IDs; not part of the deliverable)
+security-report/_snapshot.py
+security-report/_check_users.py
+security-report/_run_debrief.py
+security-report/_debrief_full.py
+security-report/.qbr_*.js
